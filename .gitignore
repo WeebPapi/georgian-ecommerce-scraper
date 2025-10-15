@@ -1,0 +1,11 @@
+.env
+
+
+
+# Ignore generated data files
+*.json
+*.csv
+
+# Ignore Python cache and virtual environment
+__pycache__/
+.venv/

@@ -4,6 +4,8 @@ Handles scraping products from multiple Georgian e-commerce sites
 and syncing them to PostgreSQL database
 """
 
+# Test for name changes : 2
+
 import asyncio
 import asyncpg
 import requests

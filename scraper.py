@@ -286,21 +286,39 @@ class WishlistGeScraper(ProductScraper):
             # Extract images
             images = []
             
-            # Method 1: Look for the main detailed image by ID pattern
-            main_img = soup.find('img', id=lambda x: x and x.startswith('det_img'))
-            if main_img:
-                src = main_img.get('src') or main_img.get('data-src')
+            # Target 1: Find all potential product image tags
+            # We look for common classes used by the CS-Cart platform (which wishlist.ge uses)
+            product_images = soup.find_all(
+                'img', 
+                class_=lambda x: x and any(cls in str(x) for cls in ['ty-pict', 'cm-image', 'cloud-zoom', 'product-image', 'detailed'])
+            )
+
+            for img in product_images:
+                # Prioritize lazy-loaded attributes (data-src, data-lazy) as they often hold the full-res URL
+                src = img.get('data-src') or img.get('data-lazy') or img.get('src') 
+                
                 if src:
-                    images.append(urljoin(product_url, src))
-            
-            # Method 2: Look for all images in the gallery or with common product classes
-            img_elements = soup.find_all('img', class_=lambda x: x and ('cm-image' in x or 'ty-pict' in x))
-            for img in img_elements:
-                src = img.get('src') or img.get('data-src') or img.get('data-lazy')
-                if src and not any(x in src.lower() for x in ['logo', 'icon', 'placeholder', 'payment', 'button']):
                     full_url = urljoin(product_url, src)
-                    if full_url not in images:
-                        images.append(full_url)
+                    
+                    # Basic filtering to exclude site elements, not product images
+                    if not any(exclude in full_url.lower() for exclude in ['logo', 'banner', 'icon', 'payment', 'social', 'footer', 'header', 'spacer', 'no-image']):
+                        
+                        # Filter out known low-resolution directories/patterns
+                        if not any(size_pattern in full_url.lower() for size_pattern in ['/50/', '/100/', '_thumb', 'icon']):
+                            images.append(full_url)
+            
+            # Deduplicate and sort (from high-res to low-res if possible)
+            images = list(dict.fromkeys(images))
+            
+            # Fallback: If no images found or all were filtered out, try again with less strict filtering
+            if not images and product_images:
+                for img in product_images:
+                    src = img.get('data-src') or img.get('data-lazy') or img.get('src') 
+                    if src and not full_url in images:
+                        images.append(urljoin(product_url, src))
+            
+            # --- END REVISED IMAGE EXTRACTION LOGIC ---
+            
             
             product = {
                 'external_id': external_id,
@@ -366,6 +384,7 @@ class WishlistGeScraper(ProductScraper):
         print(f"   Category: {product['category']}")
         print(f"   Images: {len(product['gallery_images'])} found")
         print(f"   In Stock: {'Yes' if product['in_stock'] else 'No'}")
+        print(f"   main image: {product['main_image_url']}")
         if product['description']:
             print(f"   Description: {product['description'][:60]}...")
 
@@ -635,19 +654,6 @@ class ScraperOrchestrator:
             'extra': ExtraGeScraper(),
             'wishlist': WishlistGeScraper()
         }
-        
-        # [Keep your existing scrape_config dictionary here]
-        self.scrape_config = {
-            'veli': [
-                ['https://veli.store/category/teqnika/774/', 'Technology'],
-                # ... rest of your config
-            ],
-            'extra': [],
-            'wishlist': [
-                ['https://wishlist.ge/%E1%83%A2%E1%83%94%E1%83%9A%E1%83%94%E1%83%A4%E1%83%9D%E1%83%9C%E1%83%94%E1%83%91%E1%83%98-%E1%83%A2%E1%83%90%E1%83%91%E1%83%94%E1%83%91%E1%83%98-%E1%83%90%E1%83%A5%E1%83%A1%E1%83%94%E1%83%A1%E1%83%A3%E1%83%90%E1%83%A0%E1%83%94%E1%83%91%E1%83%98/', 'Phones-Tablets'],
-                # ... rest of your config
-            ]
-        }
     
     async def scrape_all_sources(self):
         """Scrape all configured sources"""
@@ -762,38 +768,37 @@ class ScraperOrchestrator:
             'veli': [
                 ['https://veli.store/category/teqnika/774/', 'Technology'],
                 ['https://veli.store/category/silamaze-movla/175/', 'Beauty'],
-                ['https://veli.store/category/sporti-mogzauroba/fan-shop/5332/', 'Sport-Travel'],
-                ['https://veli.store/category/sakhli-da-ezo/1178/', 'House-Garden'],
-                ['https://veli.store/category/sakhlis-movla/308/', 'House-care'],
-                ['https://veli.store/category/ckhovelebis-movla/1376/', 'Pet-care'],
+                ['https://veli.store/category/sporti-mogzauroba/fan-shop/5332/', 'SportTravel'],
+                ['https://veli.store/category/sakhlis-movla/308/', 'Housecare'],
+                ['https://veli.store/category/ckhovelebis-movla/1376/', 'Petcare'],
                 ['https://veli.store/category/bari-meti/1561/', 'Drinks'],
                 ['https://veli.store/category/remonti-khelsatsyoebi/7196/', 'Construction'],
-                ['https://veli.store/category/mshobeli-bavshvi/188/', 'Parent-kid'],
+                ['https://veli.store/category/mshobeli-bavshvi/188/', 'Childcare'],
                 ['https://veli.store/category/tsignebi/62/', 'Books'],
-                ['https://veli.store/category/tansacmeli-aqsesuarebi/6263/', 'Clothes-Accessories'],
+                ['https://veli.store/category/tansacmeli-aqsesuarebi/6263/', 'Clothes'],
                 ['https://veli.store/category/satamashoebi/700/', 'Toys'],
-                ['https://veli.store/category/avto-moto/2329/', 'Car/Bike_Accessories'],
+                ['https://veli.store/category/avto-moto/2329/', 'Vehicle Accessories'],
                 ['https://veli.store/category/sachuqrebi/2264/', 'Gifts'],
-                ['https://veli.store/category/sakancelario-krafti/114/', 'Back_to_school'],
-                ['https://veli.store/category/yoveldghiuri-sayidlebi/5196/', 'Everyday_use'],
+                ['https://veli.store/category/sakancelario-krafti/114/', 'School'],
+                ['https://veli.store/category/yoveldghiuri-sayidlebi/5196/', 'General'],
             ],
             'extra': [],
             'wishlist': [
-                ['https://wishlist.ge/%E1%83%A2%E1%83%94%E1%83%9A%E1%83%94%E1%83%A4%E1%83%9D%E1%83%9C%E1%83%94%E1%83%91%E1%83%98-%E1%83%A2%E1%83%90%E1%83%91%E1%83%94%E1%83%91%E1%83%98-%E1%83%90%E1%83%A5%E1%83%A1%E1%83%94%E1%83%A1%E1%83%A3%E1%83%90%E1%83%A0%E1%83%94%E1%83%91%E1%83%98/', 'Phones-Tablets'],
-                ['https://wishlist.ge/%E1%83%A1%E1%83%90%E1%83%9D%E1%83%A4%E1%83%98%E1%83%A1%E1%83%94-%E1%83%93%E1%83%90-%E1%83%A5%E1%83%A1%E1%83%94%E1%83%9A%E1%83%A3%E1%83%A0%E1%83%98-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Office-Tech'],
+                ['https://wishlist.ge/%E1%83%A2%E1%83%94%E1%83%9A%E1%83%94%E1%83%A4%E1%83%9D%E1%83%9C%E1%83%94%E1%83%91%E1%83%98-%E1%83%A2%E1%83%90%E1%83%91%E1%83%94%E1%83%91%E1%83%98-%E1%83%90%E1%83%A5%E1%83%A1%E1%83%94%E1%83%A1%E1%83%A3%E1%83%90%E1%83%A0%E1%83%94%E1%83%91%E1%83%98/', 'Technology'],
+                ['https://wishlist.ge/%E1%83%A1%E1%83%90%E1%83%9D%E1%83%A4%E1%83%98%E1%83%A1%E1%83%94-%E1%83%93%E1%83%90-%E1%83%A5%E1%83%A1%E1%83%94%E1%83%9A%E1%83%A3%E1%83%A0%E1%83%98-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Technology'],
                 ['https://wishlist.ge/%E1%83%9B%E1%83%A8%E1%83%94%E1%83%9C%E1%83%94%E1%83%91%E1%83%9A%E1%83%9D%E1%83%91%E1%83%90-%E1%83%A0%E1%83%94%E1%83%9B%E1%83%9D%E1%83%9C%E1%83%A2%E1%83%98/', 'Construction'],
-                ['https://wishlist.ge/%E1%83%AC%E1%83%95%E1%83%A0%E1%83%98%E1%83%9A%E1%83%98-%E1%83%A1%E1%83%90%E1%83%A7%E1%83%9D%E1%83%A4%E1%83%90%E1%83%AA%E1%83%AE%E1%83%9D%E1%83%95%E1%83%A0%E1%83%94%E1%83%91%E1%83%9D-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Household-little'],
-                ['https://wishlist.ge/%E1%83%9B%E1%83%A1%E1%83%AE%E1%83%95%E1%83%98%E1%83%9A%E1%83%98-%E1%83%A1%E1%83%90%E1%83%A7%E1%83%9D%E1%83%A4%E1%83%90%E1%83%AA%E1%83%AE%E1%83%9D%E1%83%95%E1%83%A0%E1%83%94%E1%83%91%E1%83%9D-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Household-big'],
-                ['https://wishlist.ge/%E1%83%99%E1%83%9A%E1%83%98%E1%83%9B%E1%83%90%E1%83%A2%E1%83%A3%E1%83%A0%E1%83%98-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Climate Technology'],
-                ['https://wishlist.ge/%E1%83%9C%E1%83%9D%E1%83%A3%E1%83%97%E1%83%91%E1%83%A3%E1%83%A5%E1%83%94%E1%83%91%E1%83%98-%E1%83%99%E1%83%9D%E1%83%9B%E1%83%9E%E1%83%98%E1%83%A3%E1%83%A2%E1%83%94%E1%83%A0%E1%83%94%E1%83%91%E1%83%98-%E1%83%99%E1%83%9D%E1%83%9C%E1%83%A1%E1%83%9D%E1%83%9A%E1%83%94%E1%83%91%E1%83%98/', 'Laptops-Computers-Consoles'],
-                ['https://wishlist.ge/%E1%83%A2%E1%83%94%E1%83%9A%E1%83%94%E1%83%95%E1%83%98%E1%83%96%E1%83%9D%E1%83%A0%E1%83%94%E1%83%91%E1%83%98-%E1%83%A4%E1%83%9D%E1%83%A2%E1%83%9D-%E1%83%95%E1%83%98%E1%83%93%E1%83%94%E1%83%9D-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'TVs-Photography'],
+                ['https://wishlist.ge/%E1%83%AC%E1%83%95%E1%83%A0%E1%83%98%E1%83%9A%E1%83%98-%E1%83%A1%E1%83%90%E1%83%A7%E1%83%9D%E1%83%A4%E1%83%90%E1%83%AA%E1%83%AE%E1%83%9D%E1%83%95%E1%83%A0%E1%83%94%E1%83%91%E1%83%9D-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Household'],
+                ['https://wishlist.ge/%E1%83%9B%E1%83%A1%E1%83%AE%E1%83%95%E1%83%98%E1%83%9A%E1%83%98-%E1%83%A1%E1%83%90%E1%83%A7%E1%83%9D%E1%83%A4%E1%83%90%E1%83%AA%E1%83%AE%E1%83%9D%E1%83%95%E1%83%A0%E1%83%94%E1%83%91%E1%83%9D-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Household'],
+                ['https://wishlist.ge/%E1%83%99%E1%83%9A%E1%83%98%E1%83%9B%E1%83%90%E1%83%A2%E1%83%A3%E1%83%A0%E1%83%98-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Cooling'],
+                ['https://wishlist.ge/%E1%83%9C%E1%83%9D%E1%83%A3%E1%83%97%E1%83%91%E1%83%A3%E1%83%A5%E1%83%94%E1%83%91%E1%83%98-%E1%83%99%E1%83%9D%E1%83%9B%E1%83%9E%E1%83%98%E1%83%A3%E1%83%A2%E1%83%94%E1%83%A0%E1%83%94%E1%83%91%E1%83%98-%E1%83%99%E1%83%9D%E1%83%9C%E1%83%A1%E1%83%9D%E1%83%9A%E1%83%94%E1%83%91%E1%83%98/', 'Computers'],
+                ['https://wishlist.ge/%E1%83%A2%E1%83%94%E1%83%9A%E1%83%94%E1%83%95%E1%83%98%E1%83%96%E1%83%9D%E1%83%A0%E1%83%94%E1%83%91%E1%83%98-%E1%83%A4%E1%83%9D%E1%83%A2%E1%83%9D-%E1%83%95%E1%83%98%E1%83%93%E1%83%94%E1%83%9D-%E1%83%A2%E1%83%94%E1%83%A5%E1%83%9C%E1%83%98%E1%83%99%E1%83%90/', 'Media'],
                 ['https://wishlist.ge/%E1%83%94%E1%83%96%E1%83%9D-%E1%83%93%E1%83%90-%E1%83%91%E1%83%90%E1%83%A6%E1%83%98/', 'Garden'],
-                ['https://wishlist.ge/%E1%83%AD%E1%83%A3%E1%83%A0%E1%83%AD%E1%83%94%E1%83%9A%E1%83%98-%E1%83%93%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%96%E1%83%90%E1%83%A0%E1%83%94%E1%83%A3%E1%83%9A%E1%83%9D%E1%83%A1-%E1%83%90%E1%83%A5%E1%83%A1%E1%83%94%E1%83%A1%E1%83%A3%E1%83%90%E1%83%A0%E1%83%94%E1%83%91%E1%83%98/', 'Cooking-sets'],
+                ['https://wishlist.ge/%E1%83%AD%E1%83%A3%E1%83%A0%E1%83%AD%E1%83%94%E1%83%9A%E1%83%98-%E1%83%93%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%96%E1%83%90%E1%83%A0%E1%83%94%E1%83%A3%E1%83%9A%E1%83%9D%E1%83%A1-%E1%83%90%E1%83%A5%E1%83%A1%E1%83%94%E1%83%A1%E1%83%A3%E1%83%90%E1%83%A0%E1%83%94%E1%83%91%E1%83%98/', 'Kitchen'],
                 ['https://wishlist.ge/%E1%83%A1%E1%83%90%E1%83%96%E1%83%90%E1%83%A4%E1%83%AE%E1%83%A3%E1%83%9A%E1%83%9D-%E1%83%A8%E1%83%94%E1%83%9B%E1%83%9D%E1%83%97%E1%83%90%E1%83%95%E1%83%90%E1%83%96%E1%83%94%E1%83%91%E1%83%94%E1%83%91%E1%83%98-%E1%83%90%E1%83%A3%E1%83%96%E1%83%94%E1%83%91%E1%83%98-%E1%83%90%E1%83%A5%E1%83%A1%E1%83%94%E1%83%A1%E1%83%A3%E1%83%90%E1%83%A0%E1%83%94%E1%83%91%E1%83%98/', 'Pools-Pool_accessories'],
-                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%94%E1%83%9A%E1%83%94%E1%83%A5%E1%83%A2%E1%83%A0%E1%83%9D-%E1%83%9B%E1%83%90%E1%83%9C%E1%83%A5%E1%83%90%E1%83%9C%E1%83%94%E1%83%91%E1%83%98/', 'Electric_toy_cars'],
-                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%A1%E1%83%90%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%9D-%E1%83%94%E1%83%A2%E1%83%9A%E1%83%94%E1%83%91%E1%83%98/', 'Kid_stroller'],
-                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%A9%E1%83%95%E1%83%98%E1%83%9A%E1%83%98%E1%83%A1-%E1%83%A2%E1%83%90%E1%83%9C%E1%83%A1%E1%83%90%E1%83%AA%E1%83%9B%E1%83%94%E1%83%9A%E1%83%98/', 'Kid_clothes'],
-                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%A1%E1%83%9E%E1%83%9D%E1%83%A0%E1%83%A2%E1%83%A3%E1%83%9A%E1%83%98-%E1%83%98%E1%83%9C%E1%83%95%E1%83%94%E1%83%9C%E1%83%A2%E1%83%90%E1%83%A0%E1%83%98/page-2/', 'Sports_gear_for_kids'],
+                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%94%E1%83%9A%E1%83%94%E1%83%A5%E1%83%A2%E1%83%A0%E1%83%9D-%E1%83%9B%E1%83%90%E1%83%9C%E1%83%A5%E1%83%90%E1%83%9C%E1%83%94%E1%83%91%E1%83%98/', 'Toys'],
+                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%A1%E1%83%90%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%9D-%E1%83%94%E1%83%A2%E1%83%9A%E1%83%94%E1%83%91%E1%83%98/', 'Childcare'],
+                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%A9%E1%83%95%E1%83%98%E1%83%9A%E1%83%98%E1%83%A1-%E1%83%A2%E1%83%90%E1%83%9C%E1%83%A1%E1%83%90%E1%83%AA%E1%83%9B%E1%83%94%E1%83%9A%E1%83%98/', 'Kid Clothes'],
+                ['https://wishlist.ge/%E1%83%91%E1%83%90%E1%83%95%E1%83%A8%E1%83%95%E1%83%97%E1%83%90-%E1%83%A1%E1%83%90%E1%83%9B%E1%83%A7%E1%83%90%E1%83%A0%E1%83%9D/%E1%83%A1%E1%83%9E%E1%83%9D%E1%83%A0%E1%83%A2%E1%83%A3%E1%83%9A%E1%83%98-%E1%83%98%E1%83%9C%E1%83%95%E1%83%94%E1%83%9C%E1%83%A2%E1%83%90%E1%83%A0%E1%83%98/page-2/', 'Sports kids'],
             ]
         }
     
